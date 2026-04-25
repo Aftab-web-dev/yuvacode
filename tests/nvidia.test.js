@@ -116,3 +116,20 @@ test('MODELS exports include the curated 4', async () => {
   assert.ok(ids.includes('mistralai/mistral-large-2-instruct'));
   assert.equal(DEFAULT_MODEL, 'meta/llama-3.3-70b-instruct');
 });
+
+test('chat throws timeout error when fetch is aborted', async () => {
+  // Mock fetch that never resolves naturally — relies on the AbortSignal
+  mock.method(globalThis, 'fetch', (url, opts) => {
+    return new Promise((_resolve, reject) => {
+      opts.signal.addEventListener('abort', () => {
+        const err = new Error('aborted');
+        err.name = 'AbortError';
+        reject(err);
+      });
+    });
+  });
+
+  const { NVIDIAClient } = await import('../src/nvidia.js?t=' + Date.now());
+  const c = new NVIDIAClient({ apiKey: 'k', model: 'm', requestTimeoutMs: 50 });
+  await assert.rejects(() => c.chat([{ role: 'user', content: 'hi' }], 's', []), /timed out/i);
+});

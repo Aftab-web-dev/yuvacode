@@ -1,5 +1,6 @@
 const ENDPOINT = 'https://integrate.api.nvidia.com/v1/chat/completions';
 const DEFAULT_RETRY_DELAY_MS = 5000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 120000;
 
 export const MODELS = [
   { id: 'meta/llama-3.3-70b-instruct',            name: 'Llama 3.3 70B (recommended)' },
@@ -11,12 +12,13 @@ export const MODELS = [
 export const DEFAULT_MODEL = MODELS[0].id;
 
 export class NVIDIAClient {
-  constructor({ apiKey, model, maxTokens, temperature, retryDelayMs }) {
+  constructor({ apiKey, model, maxTokens, temperature, retryDelayMs, requestTimeoutMs }) {
     this.apiKey = apiKey || '';
     this.model = model || DEFAULT_MODEL;
     this.maxTokens = maxTokens || 4096;
     this.temperature = temperature ?? 0.7;
     this.retryDelayMs = retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+    this.requestTimeoutMs = requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   }
 
   async chat(messages, systemPrompt, tools) {
@@ -35,12 +37,37 @@ export class NVIDIAClient {
     const headers = { 'Content-Type': 'application/json' };
     if (this.apiKey) headers['Authorization'] = `Bearer ${this.apiKey}`;
 
-    let res = await fetch(ENDPOINT, { method: 'POST', headers, body: JSON.stringify(body) });
+    const fetchWithTimeout = async () => {
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), this.requestTimeoutMs);
+      try {
+        return await fetch(ENDPOINT, { method: 'POST', headers, body: JSON.stringify(body), signal: ac.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
+    let res;
+    try {
+      res = await fetchWithTimeout();
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        throw new Error(`NVIDIA request timed out after ${this.requestTimeoutMs}ms`);
+      }
+      throw err;
+    }
 
     // Retry once on 429
     if (res.status === 429) {
       await new Promise(r => setTimeout(r, this.retryDelayMs));
-      res = await fetch(ENDPOINT, { method: 'POST', headers, body: JSON.stringify(body) });
+      try {
+        res = await fetchWithTimeout();
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          throw new Error(`NVIDIA request timed out after ${this.requestTimeoutMs}ms`);
+        }
+        throw err;
+      }
     }
 
     if (!res.ok) {
@@ -79,7 +106,8 @@ export class NVIDIAClient {
     });
 
     if (!content && toolCalls.length === 0) {
-      throw new Error('NVIDIA returned an empty response (no content, no tool calls)');
+      const reason = choice.finish_reason ? ` (finish_reason: ${choice.finish_reason})` : '';
+      throw new Error(`NVIDIA returned an empty response (no content, no tool calls)${reason}`);
     }
 
     return {
