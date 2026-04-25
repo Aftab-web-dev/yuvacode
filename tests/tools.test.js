@@ -8,7 +8,9 @@ let tmpDir;
 beforeEach(() => {
   tmpDir = mkdtempSync(join(tmpdir(), 'yuva-tools-test-'));
 });
-afterEach(() => {
+afterEach(async () => {
+  // Small delay to let Windows release file handles after process tree kill
+  await new Promise(r => setTimeout(r, 100));
   rmSync(tmpDir, { recursive: true, force: true });
   mock.restoreAll();
 });

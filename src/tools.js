@@ -1,6 +1,6 @@
-import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 
 const DESTRUCTIVE = new Set(['shell', 'write_file', 'edit_file']);
 
@@ -84,8 +84,15 @@ const handlers = {
     if (!path) return { ok: false, error: 'path is required' };
     const fp = resolve(cwd, path);
     try {
-      const content = await readFile(fp, 'utf-8');
-      return { ok: true, content, path };
+      const MAX_FILE_BYTES = 256_000;
+      const buf = await readFile(fp);
+      let content = buf.toString('utf-8');
+      let truncated = false;
+      if (buf.length > MAX_FILE_BYTES) {
+        content = buf.subarray(0, MAX_FILE_BYTES).toString('utf-8') + `\n\n... [truncated, file is ${buf.length} bytes total]`;
+        truncated = true;
+      }
+      return { ok: true, content, path, truncated };
     } catch (err) {
       return { ok: false, error: err.code === 'ENOENT' ? `ENOENT: ${path} not found` : err.message };
     }
@@ -132,15 +139,8 @@ const handlers = {
   list_files: async ({ path = '.' }, { cwd }) => {
     const fp = resolve(cwd, path);
     try {
-      const entries = await readdir(fp);
-      const annotated = await Promise.all(entries.map(async (name) => {
-        try {
-          const st = await stat(resolve(fp, name));
-          return st.isDirectory() ? `${name}/` : name;
-        } catch {
-          return name;
-        }
-      }));
+      const dirents = await readdir(fp, { withFileTypes: true });
+      const annotated = dirents.map(e => e.isDirectory() ? `${e.name}/` : e.name);
       return { ok: true, path, entries: annotated };
     } catch (err) {
       return { ok: false, error: err.message };
@@ -152,28 +152,51 @@ const handlers = {
     return new Promise((resolveP) => {
       const child = spawn(command, [], { cwd, shell: true });
 
+      const MAX_OUTPUT = 1_000_000; // ~1 MB cap per stream
       let stdout = '';
       let stderr = '';
+      let truncated = false;
       let timedOut = false;
+      let resolved = false;
+
+      const safeResolve = (result) => {
+        if (resolved) return;
+        resolved = true;
+        resolveP(result);
+      };
+
       const timer = setTimeout(() => {
         timedOut = true;
-        child.kill('SIGKILL');
+        // On Windows, kill the entire process tree; on Unix, SIGKILL is sufficient
+        try {
+          if (process.platform === 'win32' && child.pid) {
+            execSync(`taskkill /pid ${child.pid} /t /f`, { stdio: 'ignore' });
+          } else {
+            child.kill('SIGKILL');
+          }
+        } catch { /* ignore if process already dead */ }
+        // Resolve immediately — don't wait for close (Windows orphan-child issue)
+        safeResolve({ ok: false, error: `timeout after ${timeoutMs}ms`, stdout, stderr, truncated });
       }, timeoutMs);
 
-      child.stdout.on('data', d => { stdout += d.toString(); });
-      child.stderr.on('data', d => { stderr += d.toString(); });
+      child.stdout.on('data', d => {
+        if (stdout.length < MAX_OUTPUT) stdout += d.toString();
+        else truncated = true;
+      });
+      child.stderr.on('data', d => {
+        if (stderr.length < MAX_OUTPUT) stderr += d.toString();
+        else truncated = true;
+      });
 
       child.on('close', (code) => {
         clearTimeout(timer);
-        if (timedOut) {
-          return resolveP({ ok: false, error: `timeout after ${timeoutMs}ms`, stdout, stderr });
-        }
+        if (timedOut) return; // Already resolved by the timer
         const ok = code === 0;
-        resolveP({ ok, stdout, stderr, exit_code: code });
+        safeResolve({ ok, stdout, stderr, exit_code: code, truncated });
       });
       child.on('error', (err) => {
         clearTimeout(timer);
-        resolveP({ ok: false, error: err.message, stdout, stderr });
+        safeResolve({ ok: false, error: err.message, stdout, stderr, truncated });
       });
     });
   }
