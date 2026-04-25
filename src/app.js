@@ -2,7 +2,7 @@ import readline from 'node:readline';
 import chalk from 'chalk';
 import { resolve } from 'node:path';
 import { loadConfig, saveConfig, getConfigPath } from './config.js';
-import { NVIDIAClient, MODELS, DEFAULT_MODEL } from './nvidia.js';
+import { NVIDIAClient, MODELS } from './nvidia.js';
 import { TOOL_SCHEMAS, executeTool } from './tools.js';
 import { select } from '@inquirer/prompts';
 
@@ -166,6 +166,7 @@ async function doChat(input) {
       if (repetitionBroke) break;
 
       // Execute tools serially
+      const MAX_TOOL_CONTENT_BYTES = 64_000;
       for (const tc of toolCalls) {
         const result = await executeTool(tc.name, tc.args, {
           cwd: currentDir,
@@ -173,10 +174,14 @@ async function doChat(input) {
           sessionAllow
         });
         printToolResult(tc.name, tc.args, result);
+        let toolContent = JSON.stringify(result);
+        if (toolContent.length > MAX_TOOL_CONTENT_BYTES) {
+          toolContent = toolContent.slice(0, MAX_TOOL_CONTENT_BYTES) + '... [truncated for context]';
+        }
         messages.push({
           role: 'tool',
           tool_call_id: tc.id,
-          content: JSON.stringify(result)
+          content: toolContent
         });
       }
     }
@@ -268,6 +273,7 @@ async function doSlash(input) {
     case '/quit':
       console.log(dim('\n  Goodbye!\n'));
       process.exit(0);
+      break;
 
     default:
       console.log(red(` ✗ Unknown: ${cmd}. Type /help`));
