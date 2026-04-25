@@ -107,13 +107,13 @@ test('chat throws on empty content + empty tool_calls', async () => {
   await assert.rejects(() => c.chat([{ role: 'user', content: 'hi' }], 's', []), /empty/i);
 });
 
-test('MODELS exports include the curated 4', async () => {
+test('MODELS exports the curated tool-supporting models', async () => {
   const { MODELS, DEFAULT_MODEL } = await import('../src/nvidia.js?t=' + Date.now());
   const ids = MODELS.map(m => m.id);
   assert.ok(ids.includes('meta/llama-3.3-70b-instruct'));
   assert.ok(ids.includes('nvidia/llama-3.1-nemotron-70b-instruct'));
-  assert.ok(ids.includes('qwen/qwen2.5-coder-32b-instruct'));
   assert.ok(ids.includes('mistralai/mistral-large-2-instruct'));
+  assert.ok(!ids.includes('qwen/qwen2.5-coder-32b-instruct'), 'qwen-coder dropped (no tool support on NVIDIA)');
   assert.equal(DEFAULT_MODEL, 'meta/llama-3.3-70b-instruct');
 });
 

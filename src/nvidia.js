@@ -2,10 +2,12 @@ const ENDPOINT = 'https://integrate.api.nvidia.com/v1/chat/completions';
 const DEFAULT_RETRY_DELAY_MS = 5000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 120000;
 
+// Curated subset of https://build.nvidia.com/explore/discover. All entries must
+// support native tool calling (the qwen-coder model does NOT and was removed —
+// NVIDIA returns 400 "Tool use has not been enabled").
 export const MODELS = [
   { id: 'meta/llama-3.3-70b-instruct',            name: 'Llama 3.3 70B (recommended)' },
   { id: 'nvidia/llama-3.1-nemotron-70b-instruct', name: 'Nemotron 70B' },
-  { id: 'qwen/qwen2.5-coder-32b-instruct',        name: 'Qwen 2.5 Coder 32B' },
   { id: 'mistralai/mistral-large-2-instruct',     name: 'Mistral Large 2' }
 ];
 
