@@ -14,6 +14,7 @@ export async function runSetup() {
   console.log(gray('  ─────────────────────────────'));
   console.log();
   console.log(gray('  Get a free API key at: ') + white('https://build.nvidia.com/'));
+  console.log(gray('  (Paste with Ctrl+V or Cmd+V — input will be masked)'));
   console.log();
 
   const config = loadConfig();
@@ -31,16 +32,23 @@ export async function runSetup() {
   }
   config.apiKey = apiKey.trim();
 
+  const validModelIds = new Set(MODELS.map(m => m.id));
+  const defaultModel = validModelIds.has(config.model) ? config.model : DEFAULT_MODEL;
+  if (config.model && !validModelIds.has(config.model)) {
+    console.log(gray(`  (Saved model "${config.model}" is no longer in the curated list — defaulting to ${DEFAULT_MODEL})`));
+    console.log();
+  }
+
   let model;
   try {
     model = await select({
       message: 'Choose model:',
-      default: config.model || DEFAULT_MODEL,
+      default: defaultModel,
       choices: MODELS.map(m => ({ name: m.name, value: m.id })),
       loop: false
     });
   } catch {
-    console.log(gray('\n  Setup cancelled.\n'));
+    console.log(gray('\n  Setup cancelled. API key not saved.\n'));
     return;
   }
   config.model = model;
