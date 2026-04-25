@@ -12,10 +12,10 @@ if (args.includes('--help') || args.includes('-h')) {
   console.log(accent('  ✻ YUVA Code') + muted(' — NVIDIA-powered AI Coding CLI'));
   console.log();
   console.log(txt('  Usage:'));
-  console.log(muted('    yuva              ') + txt('Start interactive chat'));
-  console.log(muted('    yuva --setup      ') + txt('Run setup wizard'));
-  console.log(muted('    yuva --help       ') + txt('Show this help'));
-  console.log(muted('    yuva --version    ') + txt('Show version'));
+  console.log(muted('    yuva                  ') + txt('Start interactive chat'));
+  console.log(muted('    yuva --setup, -s      ') + txt('Run setup wizard'));
+  console.log(muted('    yuva --help,  -h      ') + txt('Show this help'));
+  console.log(muted('    yuva --version, -v    ') + txt('Show version'));
   console.log();
   process.exit(0);
 }
